@@ -11,6 +11,12 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
+mod pty;
+mod spool;
+mod worker;
+
+pub type Result<T> = std::io::Result<T>;
+
 #[derive(Debug)]
 struct PtyEvent(usize);
 
@@ -88,6 +94,21 @@ impl ApplicationHandler<PtyEvent> for App {
 }
 
 fn main() {
-    let el = EventLoop::<PtyEvent>::with_user_event().build().unwrap();
-    el.run_app(&mut App::default()).unwrap();
+    let r = match std::env::args().nth(1).as_deref() {
+	Some("worker") => worker::run(),
+	_ => gui(),
+    };
+    if let Err(e) = r {
+	eprintln!("termlet: {e}");
+	std::process::exit(1);
+    }
+}
+
+fn gui() -> Result<()> {
+    let el = EventLoop::<PtyEvent>::with_user_event()
+	.build()
+	.map_err(std::io::Error::other)?;
+
+    el.run_app(&mut App::default()).map_err(std::io::Error::other)?;
+    Ok(())
 }

@@ -504,6 +504,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1119,6 +1125,7 @@ checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
  "bitflags 2.13.2",
  "errno",
+ "itoa",
  "libc",
  "linux-raw-sys 0.4.15",
  "windows-sys 0.59.0",
@@ -1319,6 +1326,7 @@ dependencies = [
  "glutin",
  "glutin-winit",
  "raw-window-handle",
+ "rustix 0.38.44",
  "winit",
 ]
 
