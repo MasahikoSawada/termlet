@@ -30,14 +30,14 @@ pub fn set_winsize(master: &OwnedFd, cols: u16, rows: u16) -> io::Result<()> {
 
 pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
     let master = rustix::pty::openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)?;
-    rustix::pty::grantpt(&master);
-    rustix::pty::unlockpt(&master);
+    rustix::pty::grantpt(&master)?;
+    rustix::pty::unlockpt(&master)?;
     let name = rustix::pty::ptsname(&master, Vec::new())?;
     let slave = rustix::fs::open(&name, OFlags::RDWR, Mode::empty())?;
 
     // The shell reads TIOCGWINSZ once at startup, so the size has to
     // be in place before spawn.
-    set_winsize(&master, cols, rows);
+    set_winsize(&master, cols, rows)?;
 
     let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/sh".into());
     let mut cmd = Command::new(shell);
@@ -46,7 +46,7 @@ pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
     let sfd = slave.try_clone()?;
     unsafe {
         cmd.pre_exec(move || {
-            rustix::process::setsid();
+            rustix::process::setsid()?;
             rustix::process::ioctl_tiocsctty(&sfd)?;
             rustix::stdio::dup2_stdin(&sfd)?;
             rustix::stdio::dup2_stdout(&sfd)?;
@@ -63,7 +63,7 @@ pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
     drop(slave);
 
     // Verify the child really took the ctty. bash reacquires one on
-    // its own, so this is the only palce a missing TIOCSCTTY shows up
+    // its own, so this is the only place a missing TIOCSCTTY shows up
     // with bash as the shell. pre_exec races with us, here the retry
     // with a nap.
     let want = Pid::from_raw(child.id() as i32).unwrap();

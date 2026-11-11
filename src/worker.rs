@@ -56,7 +56,7 @@ pub fn run() -> Result<()> {
     }
 
     let mut spool = Spool::create(&spool_path(0))?;
-    spool.append(Rec::Resize { cols, rows });
+    spool.append(Rec::Resize { cols, rows })?;
     let mut buf = [0u8; 8192];
 
     // main loop
