@@ -7,7 +7,7 @@ fn modifier_param(mods: ModifiersState) -> u8 {
     1 + mods.shift_key() as u8 + (mods.alt_key() as u8) * 2 + (mods.control_key() as u8) * 4
 }
 
-// Keys taht use 'CSI 1;m X' with a modifier and 'SS3 X' / 'CSI X' without.
+// Keys that use 'CSI 1;m X' with a modifier and 'SS3 X' / 'CSI X' without.
 // CSI: Control Sequence Introducer
 // SS3: Single Shift 3
 fn cursor_key(c: u8, mods: ModifiersState, app: bool) -> Vec<u8> {
@@ -16,7 +16,7 @@ fn cursor_key(c: u8, mods: ModifiersState, app: bool) -> Vec<u8> {
         // \x1b: escape
         format!("\x1b[1;{m}{}", c as char).into_bytes()
     } else if app {
-        vec![0x1b, b'0', c]
+        vec![0x1b, b'O', c]
     } else {
         vec![0x1b, b'[', c]
     }
@@ -25,14 +25,14 @@ fn cursor_key(c: u8, mods: ModifiersState, app: bool) -> Vec<u8> {
 fn tilde_key(n: u8, mods: ModifiersState) -> Vec<u8> {
     let m = modifier_param(mods);
     if m > 1 {
-        format!("\x1b[{n}{m}~").into_bytes()
+        format!("\x1b[{n};{m}~").into_bytes()
     } else {
         format!("\x1b[{n}~").into_bytes()
     }
 }
 
 // Encodes a key press. 'mode' matters because an application that set
-// DECCKM expects SS3 arrows; without this the arrows top working in
+// DECCKM expects SS3 arrows; without this the arrows stop working in
 // vim and emacs.
 pub fn encode(key: &Key, mods: ModifiersState, mode: TermMode) -> Option<Vec<u8>> {
     let app = mode.contains(TermMode::APP_CURSOR);
@@ -87,7 +87,6 @@ pub fn encode(key: &Key, mods: ModifiersState, mode: TermMode) -> Option<Vec<u8>
 fn control_byte(c: char) -> Option<u8> {
     let c = c.to_ascii_lowercase();
     match c {
-        'a'..='z' => Some(c as u8 & 0x1f),
         'a'..='z' => Some(c as u8 & 0x1f),
         '@' | ' ' | '2' => Some(0x00),
         '[' | '3' => Some(0x1b),
