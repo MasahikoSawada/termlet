@@ -16,12 +16,14 @@ use glutin::surface::{GlSurface, Surface, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
 use crate::Result;
 use crate::color::{Palette, resolve};
+use crate::keys;
 use crate::pty;
 use crate::render::Renderer;
 
@@ -46,6 +48,7 @@ pub struct App {
     master: Option<OwnedFd>,
     rx: Option<Receiver<Vec<u8>>>,
     palette: Palette,
+    mods: ModifiersState,
     cols: u16,
     rows: u16,
 }
@@ -60,6 +63,7 @@ impl App {
             master: None,
             rx: None,
             palette: Palette::default(),
+            mods: ModifiersState::empty(),
             cols: 80,
             rows: 24,
         }
@@ -214,6 +218,16 @@ impl App {
         }
     }
 
+    fn on_key(&self, ev: &KeyEvent) -> Result<()> {
+        let (Some(term), Some(m)) = (self.term.as_ref(), self.master.as_ref()) else {
+            return Ok(());
+        };
+        match keys::encode(&ev.logical_key, self.mods, *term.mode()) {
+            Some(bytes) => write_all(m, &bytes),
+            None => Ok(()),
+        }
+    }
+
     fn on_resize(&mut self, w: u32, h: u32) -> Result<()> {
         let Some(gfx) = self.gfx.as_ref() else {
             return Ok(());
@@ -240,6 +254,14 @@ impl App {
         }
         Ok(())
     }
+}
+
+fn write_all(fd: &OwnedFd, mut bytes: &[u8]) -> Result<()> {
+    while !bytes.is_empty() {
+        let n = rustix::io::write(fd, bytes)?;
+        bytes = &bytes[n..];
+    }
+    Ok(())
 }
 
 fn grid_size(r: &Renderer, w: u32, h: u32) -> (u16, u16) {
@@ -269,6 +291,12 @@ impl ApplicationHandler<PtyEvent> for App {
             WindowEvent::RedrawRequested => self.draw(),
             WindowEvent::Resized(size) => {
                 if let Err(e) = self.on_resize(size.width, size.height) {
+                    eprintln!("termlet: {e}");
+                }
+            }
+            WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                if let Err(e) = self.on_key(&event) {
                     eprintln!("termlet: {e}");
                 }
             }
