@@ -264,6 +264,18 @@ impl App {
         for (c, bold, x, y, fg) in glyphs {
             r.glyph(c, bold, x, y, fg);
         }
+        // TERMLET_SNAPSHOT=<file.ppm> dumps every frame. GNOME doesn't let
+        // other programs take a screenshot of a Wayland window.
+        if let Some(path) = std::env::var_os("TERMLET_SNAPSHOT") {
+            let size = gfx.window.inner_size();
+            let mut out = format!("P6\n{} {}\n255\n", size.width, size.height).into_bytes();
+            out.extend(r.read_pixels(size.width, size.height));
+            // Write and rename, so a reader never sees half a frame.
+            let tmp = std::path::Path::new(&path).with_extension("tmp");
+            if std::fs::write(&tmp, out).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
         if let Err(e) = gfx.surface.swap_buffers(&gfx.context) {
             eprintln!("termlet: swap_buffers: {e}");
         }

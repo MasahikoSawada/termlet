@@ -219,6 +219,26 @@ impl Renderer {
         self.quad(mode, gx, gy, gw, gh, fg);
     }
 
+    // The back buffer as RGB rows, top row first.
+    pub fn read_pixels(&self, w: u32, h: u32) -> Vec<u8> {
+        let mut buf = vec![0u8; (w * h * 3) as usize];
+        unsafe {
+            self.gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
+            self.gl.read_pixels(
+                0,
+                0,
+                w as i32,
+                h as i32,
+                glow::RGB,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(&mut buf)),
+            );
+        }
+        // GL's origin is bottom-left.
+        let row = (w * 3) as usize;
+        buf.chunks(row).rev().flatten().copied().collect()
+    }
+
     fn rasterize(&mut self, c: char, bold: bool) -> Glyph {
         let font_key = if bold { self.bold } else { self.regular };
         let key = GlyphKey {
