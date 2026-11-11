@@ -29,6 +29,7 @@ use winit::window::{Window, WindowId};
 use crate::Result;
 use crate::color::{Palette, resolve};
 use crate::keys;
+use crate::mok::Mok;
 use crate::pty;
 use crate::render::Renderer;
 use crate::reply::ToPty;
@@ -51,6 +52,7 @@ pub struct App {
     gfx: Option<Gfx>,
     term: Option<Term<ToPty>>,
     parser: ansi::Processor,
+    mok: Mok,
     master: Option<OwnedFd>,
     rx: Option<Receiver<Vec<u8>>>,
     // Answers to the application's queries, from ToPty.
@@ -72,6 +74,7 @@ impl App {
             gfx: None,
             term: None,
             parser: ansi::Processor::new(),
+            mok: Mok::new(),
             master: None,
             rx: None,
             reply_rx: None,
@@ -184,6 +187,12 @@ impl App {
         loop {
             match rx.try_recv() {
                 Ok(chunk) => {
+                    let r = self.mok.scan(&chunk);
+                    if !r.is_empty()
+                        && let Some(m) = self.master.as_ref()
+                    {
+                        write_all(m, &r)?;
+                    }
                     self.parser.advance(term, &chunk);
                     got = true;
                 }
@@ -264,7 +273,7 @@ impl App {
         let (Some(term), Some(m)) = (self.term.as_ref(), self.master.as_ref()) else {
             return Ok(());
         };
-        match keys::encode(&ev.logical_key, self.mods, *term.mode()) {
+        match keys::encode(&ev.logical_key, self.mods, *term.mode(), self.mok.mode()) {
             Some(bytes) => write_all(m, &bytes),
             None => Ok(()),
         }

@@ -33,12 +33,26 @@ fn tilde_key(n: u8, mods: ModifiersState) -> Vec<u8> {
 
 // Encodes a key press. 'mode' matters because an application that set
 // DECCKM expects SS3 arrows; without this the arrows stop working in
-// vim and emacs.
-pub fn encode(key: &Key, mods: ModifiersState, mode: TermMode) -> Option<Vec<u8>> {
+// vim and emacs. 'mok' is the modifyOtherKeys mode from Mok.
+pub fn encode(key: &Key, mods: ModifiersState, mode: TermMode, mok: u8) -> Option<Vec<u8>> {
     let app = mode.contains(TermMode::APP_CURSOR);
     let ctrl = mods.control_key();
     let alt = mods.alt_key();
     let shift = mods.shift_key();
+
+    // modifyOtherKeys sends 'CSI 27 ; mod ; code ~'. Mode 1 is for keys
+    // that have no byte of their own, like C-;. Mode 2 is for every key
+    // with a modifier.
+    if let Key::Character(s) = key {
+        if ctrl || alt {
+            let c = s.chars().next()?;
+            let has_byte = !ctrl || control_byte(c).is_some();
+            if mok == 2 || (mok == 1 && !has_byte) {
+                let m = modifier_param(mods);
+                return Some(format!("\x1b[27;{m};{}~", c as u32).into_bytes());
+            }
+        }
+    }
 
     let mut bytes = match key {
         Key::Named(NamedKey::Enter) => b"\r".to_vec(),
@@ -104,7 +118,7 @@ mod tests {
     use super::*;
 
     fn enc(key: Key, mods: ModifiersState, mode: TermMode) -> Option<Vec<u8>> {
-        encode(&key, mods, mode)
+        encode(&key, mods, mode, 0)
     }
     fn ch(s: &str) -> Key {
         Key::Character(s.into())
@@ -255,6 +269,30 @@ mod tests {
                 TermMode::NONE
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn ctrl_semicolon_needs_modify_other_keys() {
+        let ctrl = ModifiersState::CONTROL;
+        assert!(enc(ch(";"), ctrl, TermMode::NONE).is_none());
+        assert_eq!(
+            encode(&ch(";"), ctrl, TermMode::NONE, 1).unwrap(),
+            b"\x1b[27;5;59~"
+        );
+    }
+
+    #[test]
+    fn keys_with_a_byte_change_only_in_mode_2() {
+        let ctrl = ModifiersState::CONTROL;
+        assert_eq!(encode(&ch("c"), ctrl, TermMode::NONE, 1).unwrap(), [0x03]);
+        assert_eq!(
+            encode(&ch("c"), ctrl, TermMode::NONE, 2).unwrap(),
+            b"\x1b[27;5;99~"
+        );
+        assert_eq!(
+            encode(&ch("x"), ModifiersState::ALT, TermMode::NONE, 2).unwrap(),
+            b"\x1b[27;3;120~"
         );
     }
 }

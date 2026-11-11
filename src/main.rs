@@ -3,6 +3,7 @@ use winit::event_loop::EventLoop;
 mod app;
 mod color;
 mod keys;
+mod mok;
 mod pty;
 mod render;
 mod reply;
