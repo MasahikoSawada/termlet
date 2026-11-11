@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use alacritty_terminal::event::WindowSize;
-use alacritty_terminal::grid::Scroll;
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term, point_to_viewport};
@@ -61,8 +61,6 @@ pub struct App {
     win_size: Rc<Cell<WindowSize>>,
     palette: Palette,
     mods: ModifiersState,
-    cols: u16,
-    rows: u16,
     // Fraction of a line left over from touchpad scrolling.
     wheel_acc: f32,
 }
@@ -86,8 +84,6 @@ impl App {
             })),
             palette: Palette::default(),
             mods: ModifiersState::empty(),
-            cols: 80,
-            rows: 24,
             wheel_acc: 0.0,
         }
     }
@@ -131,8 +127,6 @@ impl App {
         let size = window.inner_size();
         renderer.resize(size.width, size.height);
         let (cols, rows) = grid_size(&renderer, size.width, size.height);
-        self.cols = cols;
-        self.rows = rows;
         self.win_size.set(window_size(&renderer, cols, rows));
 
         let pty = pty::spawn(cols, rows)?;
@@ -323,17 +317,16 @@ impl App {
         gfx.surface.resize(&gfx.context, nw, nh);
         gfx.renderer.resize(w, h);
         let (cols, rows) = grid_size(&gfx.renderer, w, h);
-        if (cols, rows) == (self.cols, self.rows) {
+        let Some(term) = self.term.as_mut() else {
+            return Ok(());
+        };
+        if (cols as usize, rows as usize) == (term.columns(), term.screen_lines()) {
             return Ok(());
         }
-        self.cols = cols;
-        self.rows = rows;
         self.win_size.set(window_size(&gfx.renderer, cols, rows));
         // Both are needed: the grid for us, and TIOCSWINSZ so the
         // application gets SIGWINCH.
-        if let Some(term) = self.term.as_mut() {
-            term.resize(TermSize::new(cols as usize, rows as usize));
-        }
+        term.resize(TermSize::new(cols as usize, rows as usize));
         if let Some(m) = self.master.as_ref() {
             pty::set_winsize(m, cols, rows)?;
         }
