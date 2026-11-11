@@ -20,6 +20,8 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
+use winit::platform::wayland::WindowAttributesExtWayland;
+use winit::platform::x11::WindowAttributesExtX11;
 use winit::window::{Window, WindowId};
 
 use crate::Result;
@@ -75,6 +77,10 @@ impl App {
 
     fn init(&mut self, el: &ActiveEventLoop) -> Result<()> {
         let attrs = Window::default_attributes().with_title("termlet");
+        // Wayland app_id and X11 WM_CLASS. Key remappers like xremap
+        // can't exclude a window without them.
+        let attrs = WindowAttributesExtWayland::with_name(attrs, "termlet", "termlet");
+        let attrs = WindowAttributesExtX11::with_name(attrs, "termlet", "termlet");
         let (window, cfg) = DisplayBuilder::new()
             .with_window_attributes(Some(attrs))
             .build(el, ConfigTemplateBuilder::new(), |mut c| c.next().unwrap())
