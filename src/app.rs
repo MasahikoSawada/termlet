@@ -243,11 +243,7 @@ impl App {
                 bg = named(NamedColor::Cursor);
             }
             if bg != default_bg {
-                let w = if c.flags.contains(Flags::WIDE_CHAR) {
-                    2 * cw
-                } else {
-                    cw
-                };
+                let w = cw * (1 + c.flags.contains(Flags::WIDE_CHAR) as i32);
                 r.fill(x, y, w, ch, bg);
             }
             if !c.flags.contains(Flags::WIDE_CHAR_SPACER) {
