@@ -7,19 +7,13 @@ mod mok;
 mod pty;
 mod render;
 mod reply;
-mod spool;
-mod worker;
 
 use app::{App, PtyEvent};
 
 pub type Result<T> = std::io::Result<T>;
 
 fn main() {
-    let r = match std::env::args().nth(1).as_deref() {
-        Some("worker") => worker::run(),
-        _ => gui(),
-    };
-    if let Err(e) = r {
+    if let Err(e) = gui() {
         eprintln!("termlet: {e}");
         std::process::exit(1);
     }

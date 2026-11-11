@@ -55,10 +55,6 @@ termlet runs `$SHELL`, or `/bin/sh` if it isn't set.
 doesn't let other programs take a screenshot of a Wayland window, so
 this is how to get one.
 
-`termlet worker` runs the shell with no window, relaying the terminal
-you start it from, and appends the output to
-`$XDG_RUNTIME_DIR/termlet/0.spool`. The window doesn't use it yet.
-
 ## Code
 
 | File | What it does |
@@ -70,8 +66,6 @@ you start it from, and appends the output to
 | `keys.rs` | Key presses to bytes |
 | `reply.rs` | Answers to the application's queries |
 | `mok.rs` | modifyOtherKeys, which alacritty_terminal doesn't do |
-| `spool.rs`, `worker.rs` | The spool and `termlet worker` |
 
-Line counts exclude tests (everything from `#[cfg(test)]` on), blank
-lines and comments: 1,162 in total, 1,010 without `spool.rs` and
-`worker.rs`.
+Line counts: 1,179 without tests (everything from `#[cfg(test)]` on),
+1,004 without blank lines and comments as well.
