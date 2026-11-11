@@ -5,6 +5,7 @@ use std::os::fd::OwnedFd;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use alacritty_terminal::event::VoidListener;
+use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term, point_to_viewport};
@@ -16,7 +17,7 @@ use glutin::surface::{GlSurface, Surface, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
@@ -51,6 +52,8 @@ pub struct App {
     mods: ModifiersState,
     cols: u16,
     rows: u16,
+    // Fraction of a line left over from touchpad scrolling.
+    wheel_acc: f32,
 }
 
 impl App {
@@ -66,6 +69,7 @@ impl App {
             mods: ModifiersState::empty(),
             cols: 80,
             rows: 24,
+            wheel_acc: 0.0,
         }
     }
 
@@ -152,15 +156,23 @@ impl App {
         let (Some(rx), Some(term)) = (self.rx.as_ref(), self.term.as_mut()) else {
             return;
         };
+        let mut got = false;
         loop {
             match rx.try_recv() {
-                Ok(chunk) => self.parser.advance(term, &chunk),
+                Ok(chunk) => {
+                    self.parser.advance(term, &chunk);
+                    got = true;
+                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     el.exit();
                     return;
                 }
             }
+        }
+        // New output brings the view back to the bottom.
+        if got && term.grid().display_offset() != 0 {
+            term.scroll_display(Scroll::Bottom);
         }
         if let Some(gfx) = self.gfx.as_ref() {
             gfx.window.request_redraw();
@@ -225,6 +237,27 @@ impl App {
         match keys::encode(&ev.logical_key, self.mods, *term.mode()) {
             Some(bytes) => write_all(m, &bytes),
             None => Ok(()),
+        }
+    }
+
+    // The alternate screen has no scrollback, so under vim or less the
+    // wheel does nothing.
+    fn on_wheel(&mut self, delta: MouseScrollDelta) {
+        let (Some(gfx), Some(term)) = (self.gfx.as_ref(), self.term.as_mut()) else {
+            return;
+        };
+        let lines = match delta {
+            MouseScrollDelta::LineDelta(_, y) => (y * 3.0) as i32,
+            MouseScrollDelta::PixelDelta(p) => {
+                self.wheel_acc += p.y as f32 / gfx.renderer.cell_h as f32;
+                let l = self.wheel_acc.trunc();
+                self.wheel_acc -= l;
+                l as i32
+            }
+        };
+        if lines != 0 {
+            term.scroll_display(Scroll::Delta(lines));
+            gfx.window.request_redraw();
         }
     }
 
@@ -300,6 +333,7 @@ impl ApplicationHandler<PtyEvent> for App {
                     eprintln!("termlet: {e}");
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } => self.on_wheel(delta),
             WindowEvent::CloseRequested => el.exit(),
             _ => {}
         }
