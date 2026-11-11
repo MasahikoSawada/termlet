@@ -2,6 +2,7 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::color::{COUNT, Colors};
 use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 
+#[derive(Clone)]
 pub struct Palette([Rgb; COUNT]);
 
 const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
@@ -61,6 +62,10 @@ impl Default for Palette {
 impl Palette {
     pub fn get(&self, c: NamedColor) -> Rgb {
         self.0[c as usize]
+    }
+
+    pub fn index(&self, i: usize) -> Rgb {
+        self.0[i]
     }
 }
 

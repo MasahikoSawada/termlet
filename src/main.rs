@@ -5,6 +5,7 @@ mod color;
 mod keys;
 mod pty;
 mod render;
+mod reply;
 mod spool;
 mod worker;
 

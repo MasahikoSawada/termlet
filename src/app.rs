@@ -1,10 +1,12 @@
 // The GUI: one window and one Term fed from the PTY.
 
+use std::cell::Cell;
 use std::num::NonZeroU32;
 use std::os::fd::OwnedFd;
+use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
-use alacritty_terminal::event::VoidListener;
+use alacritty_terminal::event::WindowSize;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
@@ -29,6 +31,7 @@ use crate::color::{Palette, resolve};
 use crate::keys;
 use crate::pty;
 use crate::render::Renderer;
+use crate::reply::ToPty;
 
 const FONT_PX: f32 = 15.0;
 
@@ -46,10 +49,14 @@ struct Gfx {
 pub struct App {
     proxy: EventLoopProxy<PtyEvent>,
     gfx: Option<Gfx>,
-    term: Option<Term<VoidListener>>,
+    term: Option<Term<ToPty>>,
     parser: ansi::Processor,
     master: Option<OwnedFd>,
     rx: Option<Receiver<Vec<u8>>>,
+    // Answers to the application's queries, from ToPty.
+    reply_rx: Option<Receiver<Vec<u8>>>,
+    // Shared with ToPty for CSI 14t.
+    win_size: Rc<Cell<WindowSize>>,
     palette: Palette,
     mods: ModifiersState,
     cols: u16,
@@ -67,6 +74,13 @@ impl App {
             parser: ansi::Processor::new(),
             master: None,
             rx: None,
+            reply_rx: None,
+            win_size: Rc::new(Cell::new(WindowSize {
+                num_lines: 24,
+                num_cols: 80,
+                cell_width: 8,
+                cell_height: 16,
+            })),
             palette: Palette::default(),
             mods: ModifiersState::empty(),
             cols: 80,
@@ -116,10 +130,14 @@ impl App {
         let (cols, rows) = grid_size(&renderer, size.width, size.height);
         self.cols = cols;
         self.rows = rows;
+        self.win_size.set(window_size(&renderer, cols, rows));
 
         let pty = pty::spawn(cols, rows)?;
         let size = TermSize::new(cols as usize, rows as usize);
-        self.term = Some(Term::new(Config::default(), &size, VoidListener));
+        let (reply_tx, reply_rx) = channel();
+        let listener = ToPty::new(reply_tx, self.palette.clone(), self.win_size.clone());
+        self.term = Some(Term::new(Config::default(), &size, listener));
+        self.reply_rx = Some(reply_rx);
 
         // winit can't wait on an fd, so a thread reads the PTY and wakes
         // the event loop.
@@ -158,9 +176,9 @@ impl App {
         Ok(())
     }
 
-    fn pump(&mut self, el: &ActiveEventLoop) {
+    fn pump(&mut self, el: &ActiveEventLoop) -> Result<()> {
         let (Some(rx), Some(term)) = (self.rx.as_ref(), self.term.as_mut()) else {
-            return;
+            return Ok(());
         };
         let mut got = false;
         loop {
@@ -172,7 +190,7 @@ impl App {
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     el.exit();
-                    return;
+                    return Ok(());
                 }
             }
         }
@@ -180,9 +198,15 @@ impl App {
         if got && term.grid().display_offset() != 0 {
             term.scroll_display(Scroll::Bottom);
         }
+        if let (Some(rx), Some(m)) = (self.reply_rx.as_ref(), self.master.as_ref()) {
+            for b in rx.try_iter() {
+                write_all(m, &b)?;
+            }
+        }
         if let Some(gfx) = self.gfx.as_ref() {
             gfx.window.request_redraw();
         }
+        Ok(())
     }
 
     fn draw(&mut self) {
@@ -283,6 +307,7 @@ impl App {
         }
         self.cols = cols;
         self.rows = rows;
+        self.win_size.set(window_size(&gfx.renderer, cols, rows));
         // Both are needed: the grid for us, and TIOCSWINSZ so the
         // application gets SIGWINCH.
         if let Some(term) = self.term.as_mut() {
@@ -301,6 +326,15 @@ fn write_all(fd: &OwnedFd, mut bytes: &[u8]) -> Result<()> {
         bytes = &bytes[n..];
     }
     Ok(())
+}
+
+fn window_size(r: &Renderer, cols: u16, rows: u16) -> WindowSize {
+    WindowSize {
+        num_lines: rows,
+        num_cols: cols,
+        cell_width: r.cell_w as u16,
+        cell_height: r.cell_h as u16,
+    }
 }
 
 fn grid_size(r: &Renderer, w: u32, h: u32) -> (u16, u16) {
@@ -322,7 +356,9 @@ impl ApplicationHandler<PtyEvent> for App {
     }
 
     fn user_event(&mut self, el: &ActiveEventLoop, _ev: PtyEvent) {
-        self.pump(el);
+        if let Err(e) = self.pump(el) {
+            eprintln!("termlet: {e}");
+        }
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, ev: WindowEvent) {
