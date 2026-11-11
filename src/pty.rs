@@ -17,8 +17,13 @@ pub struct Pty {
 
 pub fn set_winsize(master: &OwnedFd, cols: u16, rows: u16) -> io::Result<()> {
     rustix::termios::tcsetwinsize(
-	master,
-	Winsize { ws_col: cols, ws_row: rows, ws_xpixel: 0, ws_ypixel: 0 },
+        master,
+        Winsize {
+            ws_col: cols,
+            ws_row: rows,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        },
     )?;
     Ok(())
 }
@@ -40,14 +45,14 @@ pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
     cmd.env("COLORTERM", "truecolor");
     let sfd = slave.try_clone()?;
     unsafe {
-	cmd.pre_exec(move || {
-	    rustix::process::setsid();
-	    rustix::process::ioctl_tiocsctty(&sfd)?;
-	    rustix::stdio::dup2_stdin(&sfd)?;
-	    rustix::stdio::dup2_stdout(&sfd)?;
-	    rustix::stdio::dup2_stderr(&sfd)?;
-	    Ok(())
-	});
+        cmd.pre_exec(move || {
+            rustix::process::setsid();
+            rustix::process::ioctl_tiocsctty(&sfd)?;
+            rustix::stdio::dup2_stdin(&sfd)?;
+            rustix::stdio::dup2_stdout(&sfd)?;
+            rustix::stdio::dup2_stderr(&sfd)?;
+            Ok(())
+        });
     }
     let child = cmd.spawn()?;
 
@@ -64,14 +69,14 @@ pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
     let want = Pid::from_raw(child.id() as i32).unwrap();
     let mut ok = false;
     for _ in 0..50 {
-	if rustix::termios::tcgetpgrp(&master) == Ok(want) {
-	    ok = true;
-	    break;
-	}
-	std::thread::sleep(Duration::from_millis(10));
+        if rustix::termios::tcgetpgrp(&master) == Ok(want) {
+            ok = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
     if !ok {
-	eprintln!("termlet: child did not take the controlling terminal");
+        eprintln!("termlet: child did not take the controlling terminal");
     }
 
     Ok(Pty { master, child })
@@ -81,11 +86,11 @@ pub fn spawn(cols: u16, rows: u16) -> io::Result<Pty> {
 // closed. Map that to EOF so callers can treat it like any stream.
 pub fn read_master(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<usize> {
     loop {
-	match rustix::io::read(fd, buf) {
-	    Ok(n) => return Ok(n),
-	    Err(Errno::INTR) => continue,
-	    Err(Errno::IO) => return Ok(0),
-	    Err(e) => return Err(e.into()),
-	}
+        match rustix::io::read(fd, buf) {
+            Ok(n) => return Ok(n),
+            Err(Errno::INTR) => continue,
+            Err(Errno::IO) => return Ok(0),
+            Err(e) => return Err(e.into()),
+        }
     }
 }

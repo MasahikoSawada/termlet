@@ -1,16 +1,16 @@
-use std::io::{stdin, Write};
+use std::io::{Write, stdin};
 use std::path::PathBuf;
 
 use rustix::termios::{OptionalActions, Termios};
 
+use crate::Result;
 use crate::pty;
 use crate::spool::{Rec, Spool};
-use crate::Result;
 
 pub fn runtime_dir() -> PathBuf {
     let base = std::env::var_os("XDG_RUNTIME_DIR")
-	.map(PathBuf::from)
-	.unwrap_or_else(std::env::temp_dir);
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
     base.join("termlet")
 }
 
@@ -24,9 +24,7 @@ struct Restore(Termios);
 
 impl Drop for Restore {
     fn drop(&mut self) {
-	let _ = rustix::termios::tcsetattr(stdin(),
-					   OptionalActions::Now,
-					   &self.0);
+        let _ = rustix::termios::tcsetattr(stdin(), OptionalActions::Now, &self.0);
     }
 }
 
@@ -46,31 +44,31 @@ pub fn run() -> Result<()> {
     let _restore = Restore(saved);
 
     {
-	let m = pty.master.try_clone()?;
-	std::thread::spawn(move || {
-	    let mut b = [0u8; 1024];
-	    while let Ok(n) = rustix::io::read(stdin(), &mut b) {
-		if n == 0 || rustix::io::write(&m, &b[..n]).is_err() {
-		    break;
-		}
-	    }
-	});
+        let m = pty.master.try_clone()?;
+        std::thread::spawn(move || {
+            let mut b = [0u8; 1024];
+            while let Ok(n) = rustix::io::read(stdin(), &mut b) {
+                if n == 0 || rustix::io::write(&m, &b[..n]).is_err() {
+                    break;
+                }
+            }
+        });
     }
 
     let mut spool = Spool::create(&spool_path(0))?;
-    spool.append(Rec::Resize {cols, rows});
+    spool.append(Rec::Resize { cols, rows });
     let mut buf = [0u8; 8192];
 
     // main loop
     loop {
-	let n = pty::read_master(&pty.master, &mut buf)?;
-	if n == 0 {
-	    break;
-	}
+        let n = pty::read_master(&pty.master, &mut buf)?;
+        if n == 0 {
+            break;
+        }
 
-	spool.append(Rec::Out(&buf[..n]))?;
-	std::io::stdout().write_all(&buf[..n])?;
-	std::io::stdout().flush()?;
+        spool.append(Rec::Out(&buf[..n]))?;
+        std::io::stdout().write_all(&buf[..n])?;
+        std::io::stdout().flush()?;
     }
 
     Ok(())
