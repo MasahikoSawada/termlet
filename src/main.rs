@@ -14,6 +14,8 @@ use winit::window::{Window, WindowId};
 mod pty;
 mod spool;
 mod worker;
+mod color;
+mod keys;
 
 pub type Result<T> = std::io::Result<T>;
 
