@@ -1,6 +1,6 @@
 # termlet
 
-A minimal terminal emulator in about 1,200 lines of Rust.
+A minimal terminal emulator in less than 1,000 lines of Rust.
 
 termlet opens a window, runs your shell on a PTY, and draws it with
 OpenGL. It is enough to use bash and `emacs -nw`. It isn't meant to
@@ -67,5 +67,6 @@ this is how to get one.
 | `reply.rs` | Answers to the application's queries |
 | `mok.rs` | modifyOtherKeys, which alacritty_terminal doesn't do |
 
-Line counts: 1,179 without tests (everything from `#[cfg(test)]` on),
-1,004 without blank lines and comments as well.
+The count is 993 lines of code, not counting tests (everything from
+`#[cfg(test)]` on), blank lines and comments. With blank lines and
+comments it's 1,168.
