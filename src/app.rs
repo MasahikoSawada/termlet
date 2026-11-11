@@ -214,14 +214,31 @@ impl App {
         }
     }
 
-    fn on_resize(&self, w: u32, h: u32) {
-        let Some(gfx) = self.gfx.as_ref() else { return };
-        // A minimized window can report 0x0.
-        let (Some(w), Some(h)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else {
-            return;
+    fn on_resize(&mut self, w: u32, h: u32) -> Result<()> {
+        let Some(gfx) = self.gfx.as_ref() else {
+            return Ok(());
         };
-        gfx.surface.resize(&gfx.context, w, h);
-        gfx.renderer.resize(w.get(), h.get());
+        // A minimized window can report 0x0.
+        let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else {
+            return Ok(());
+        };
+        gfx.surface.resize(&gfx.context, nw, nh);
+        gfx.renderer.resize(w, h);
+        let (cols, rows) = grid_size(&gfx.renderer, w, h);
+        if (cols, rows) == (self.cols, self.rows) {
+            return Ok(());
+        }
+        self.cols = cols;
+        self.rows = rows;
+        // Both are needed: the grid for us, and TIOCSWINSZ so the
+        // application gets SIGWINCH.
+        if let Some(term) = self.term.as_mut() {
+            term.resize(TermSize::new(cols as usize, rows as usize));
+        }
+        if let Some(m) = self.master.as_ref() {
+            pty::set_winsize(m, cols, rows)?;
+        }
+        Ok(())
     }
 }
 
@@ -250,7 +267,11 @@ impl ApplicationHandler<PtyEvent> for App {
     fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, ev: WindowEvent) {
         match ev {
             WindowEvent::RedrawRequested => self.draw(),
-            WindowEvent::Resized(size) => self.on_resize(size.width, size.height),
+            WindowEvent::Resized(size) => {
+                if let Err(e) = self.on_resize(size.width, size.height) {
+                    eprintln!("termlet: {e}");
+                }
+            }
             WindowEvent::CloseRequested => el.exit(),
             _ => {}
         }
