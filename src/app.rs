@@ -5,10 +5,10 @@ use std::os::fd::OwnedFd;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use alacritty_terminal::event::VoidListener;
+use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
-use alacritty_terminal::term::{Config, Term};
-use alacritty_terminal::vte::ansi;
-use glow::HasContext;
+use alacritty_terminal::term::{Config, Term, point_to_viewport};
+use alacritty_terminal::vte::ansi::{self, CursorShape, NamedColor};
 use glutin::config::ConfigTemplateBuilder;
 use glutin::context::{ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext};
 use glutin::display::{GetGlDisplay, GlDisplay};
@@ -21,7 +21,11 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
 use crate::Result;
+use crate::color::{Palette, resolve};
 use crate::pty;
+use crate::render::Renderer;
+
+const FONT_PX: f32 = 15.0;
 
 // Sent by the PTY reader thread when there is output to parse.
 #[derive(Debug)]
@@ -31,7 +35,7 @@ struct Gfx {
     window: Window,
     surface: Surface<WindowSurface>,
     context: PossiblyCurrentContext,
-    gl: glow::Context,
+    renderer: Renderer,
 }
 
 pub struct App {
@@ -41,6 +45,9 @@ pub struct App {
     parser: ansi::Processor,
     master: Option<OwnedFd>,
     rx: Option<Receiver<Vec<u8>>>,
+    palette: Palette,
+    cols: u16,
+    rows: u16,
 }
 
 impl App {
@@ -52,6 +59,9 @@ impl App {
             parser: ansi::Processor::new(),
             master: None,
             rx: None,
+            palette: Palette::default(),
+            cols: 80,
+            rows: 24,
         }
     }
 
@@ -86,7 +96,13 @@ impl App {
             })
         };
 
-        let (cols, rows) = (80, 24);
+        let renderer = Renderer::new(gl, FONT_PX * window.scale_factor() as f32)?;
+        let size = window.inner_size();
+        renderer.resize(size.width, size.height);
+        let (cols, rows) = grid_size(&renderer, size.width, size.height);
+        self.cols = cols;
+        self.rows = rows;
+
         let pty = pty::spawn(cols, rows)?;
         let size = TermSize::new(cols as usize, rows as usize);
         self.term = Some(Term::new(Config::default(), &size, VoidListener));
@@ -123,7 +139,7 @@ impl App {
             window,
             surface,
             context,
-            gl,
+            renderer,
         });
         Ok(())
     }
@@ -147,11 +163,51 @@ impl App {
         }
     }
 
-    fn draw(&self) {
-        let Some(gfx) = self.gfx.as_ref() else { return };
-        unsafe {
-            gfx.gl.clear_color(0.08, 0.09, 0.11, 1.0);
-            gfx.gl.clear(glow::COLOR_BUFFER_BIT);
+    fn draw(&mut self) {
+        let (Some(gfx), Some(term)) = (self.gfx.as_mut(), self.term.as_ref()) else {
+            return;
+        };
+        let r = &mut gfx.renderer;
+        let (cw, ch) = (r.cell_w as i32, r.cell_h as i32);
+        let content = term.renderable_content();
+        // Colors the application changed with OSC 4/10/11.
+        let colors = content.colors;
+        let named = |n: NamedColor| colors[n].unwrap_or(self.palette.get(n));
+        let default_bg = named(NamedColor::Background);
+        r.clear(default_bg);
+
+        let offset = content.display_offset;
+        let cursor = (content.cursor.shape != CursorShape::Hidden)
+            .then(|| point_to_viewport(offset, content.cursor.point))
+            .flatten();
+
+        // Backgrounds first, then all glyphs blended on top.
+        let mut glyphs = Vec::new();
+        for cell in content.display_iter {
+            let line = cell.point.line.0 + offset as i32;
+            let col = cell.point.column.0;
+            let (x, y) = (col as i32 * cw, line * ch);
+            let c = cell.cell;
+            let (mut fg, mut bg) = resolve(c.fg, c.bg, c.flags, &self.palette, colors);
+            if cursor.is_some_and(|p| p.line == line as usize && p.column.0 == col) {
+                fg = bg;
+                bg = named(NamedColor::Cursor);
+            }
+            if bg != default_bg {
+                let w = if c.flags.contains(Flags::WIDE_CHAR) {
+                    2 * cw
+                } else {
+                    cw
+                };
+                r.fill(x, y, w, ch, bg);
+            }
+            if !c.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                glyphs.push((c.c, c.flags.contains(Flags::BOLD), x, y, fg));
+            }
+        }
+        r.begin_glyphs();
+        for (c, bold, x, y, fg) in glyphs {
+            r.glyph(c, bold, x, y, fg);
         }
         if let Err(e) = gfx.surface.swap_buffers(&gfx.context) {
             eprintln!("termlet: swap_buffers: {e}");
@@ -165,8 +221,14 @@ impl App {
             return;
         };
         gfx.surface.resize(&gfx.context, w, h);
-        unsafe { gfx.gl.viewport(0, 0, w.get() as i32, h.get() as i32) }
+        gfx.renderer.resize(w.get(), h.get());
     }
+}
+
+fn grid_size(r: &Renderer, w: u32, h: u32) -> (u16, u16) {
+    let cols = (w / r.cell_w).clamp(2, u16::MAX as u32) as u16;
+    let rows = (h / r.cell_h).clamp(1, u16::MAX as u32) as u16;
+    (cols, rows)
 }
 
 impl ApplicationHandler<PtyEvent> for App {

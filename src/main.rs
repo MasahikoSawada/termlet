@@ -4,6 +4,7 @@ mod app;
 mod color;
 mod keys;
 mod pty;
+mod render;
 mod spool;
 mod worker;
 
