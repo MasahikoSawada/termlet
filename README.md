@@ -57,16 +57,18 @@ this is how to get one.
 
 ## Code
 
-| File | What it does |
-|---|---|
-| `app.rs` | The window, the event loop, and the glue between the rest |
-| `pty.rs` | Opens the PTY and starts the shell |
-| `render.rs` | Fonts and OpenGL drawing |
-| `color.rs` | The palette and cell colors |
-| `keys.rs` | Key presses to bytes |
-| `reply.rs` | Answers to the application's queries |
-| `mok.rs` | modifyOtherKeys, which alacritty_terminal doesn't do |
+| File | Lines | What it does |
+|---|---:|---|
+| `app.rs` | 343 | The window, the event loop, and the glue between the rest |
+| `render.rs` | 260 | Fonts and OpenGL drawing |
+| `color.rs` | 118 | The palette and cell colors |
+| `keys.rs` | 91 | Key presses to bytes |
+| `pty.rs` | 75 | Opens the PTY and starts the shell |
+| `mok.rs` | 55 | modifyOtherKeys, which alacritty_terminal doesn't do |
+| `reply.rs` | 26 | Answers to the application's queries |
+| `main.rs` | 25 | |
+| Total | 993 | |
 
-The count is 993 lines of code, not counting tests (everything from
+Lines are lines of code, not counting tests (everything from
 `#[cfg(test)]` on), blank lines and comments. With blank lines and
-comments it's 1,168.
+comments the total is 1,168.
