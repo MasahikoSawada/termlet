@@ -66,3 +66,7 @@ this is how to get one.
 | `pty.rs` | Opens the PTY and starts the shell |
 | `mok.rs` | modifyOtherKeys, which alacritty_terminal doesn't do |
 | `reply.rs` | Answers to the application's queries |
+
+## License
+
+MIT. See [LICENSE](LICENSE).
